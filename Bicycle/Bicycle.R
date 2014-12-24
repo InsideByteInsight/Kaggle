@@ -17,8 +17,8 @@
 library(dplyr)
 library(rpart)
 library(rpart.plot)
-train <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bycicle/train.csv")
-test <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bycicle/test.csv")
+train <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/train.csv")
+test <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/test.csv")
 test$registered <- NA
 test$casual <- NA
 test$count <- NA
@@ -82,12 +82,15 @@ fit_rf <- randomForest(count ~
 #plot the importance of the variables of the random forest
 varImpPlot(fit_rf,sort=TRUE)
 
+#predict
 
 
+test_subset0 <- subset(traintest, time == 1 & dataset == "test")
+test_subset0$predict_count <- predict(fit_rf, test_subset0)
 
 
 ###### Submit to Kaggle #######
 
-submit <- data.frame(test$datetime, count = predict_count)
-write.csv(submit, file = "submission.csv", row.names = FALSE)
+submit <- data.frame(test_subset0$datetime, count = test_subset0$predict_count)
+write.csv(submit, file = "~/Dropbox/Machine Learning/Kaggle/Bicycle/submission.csv", row.names = FALSE)
 summary(submit)
