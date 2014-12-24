@@ -43,67 +43,71 @@ traintest$weather <- as.factor(traintest$weather)
 #Therefore we split the train set in 24 subsets, each containing only data concerning that hour
 #We will loop over the hours and run any machine learning algorithm over the hours.
 
-# as an example we will start with hour 0
-train_subset0 <- subset(traintest, time == 0 & dataset == "train")
-summary(train_subset0$hour)
-
-
-#Start wit the average of the count as a predictor
-train_subset0$predict_avg <- mean(train_subset0$count)
-MSE_Avg <- mean( (train_subset0$predict_avg - train_subset0$count)^2, na.rm = TRUE)
-
-############ Create an easy CART tree to start ##########
-fit <- rpart(count ~ 
-               season +
-               holiday +
-               workingday +
-               weather +
-               temp +
-               atemp +
-               humidity +
-               windspeed
-              ,train_subset0,method="anova",model="true")
-printcp(fit) # display the results 
-plotcp(fit) # visualize cross-validation results 
-summary(fit) # detailed summary of splits
-
-# plot tree, extra =2 -> number of correct/number of total observations
-prp(fit, faclen = 20, type = 3, varlen = 20)
-
-#calculate the mse of the training set
-train_subset0$predict_cart <- predict(fit,train_subset0)
-MSE_CART <- mean( (train_subset0$predict_cart - train_subset0$count)^2, na.rm = TRUE)
-validate(fit)
-
-
-############  Random forest #####################
-library(randomForest)
-
-#built a randomd Forest (for a random forest we first need to take care of missing values)
-fit_rf <- randomForest(count ~ 
-                         season +
-                         holiday +
-                         workingday +
-                         weather +
-                         temp +
-                         atemp +
-                         humidity +
-                         windspeed, train_subset0, importance=TRUE, ntree=20, type='supervised' )
-#plot the importance of the variables of the random forest
-varImpPlot(fit_rf,sort=TRUE)
-fit_rf
-
-#calculate the mse of the training set
-train_subset0$predict_randomforest <- predict(fit_rf,train_subset0)
-MSE_RF <- mean( (train_subset0$predict_randomforest - train_subset0$count)^2, na.rm = TRUE)
-
-
-test_subset0 <- subset(traintest, time == 1 & dataset == "test")
-test_subset0$predict_count <- predict(fit_rf, test_subset0)
-
+submit<-data.frame(datetime=character(), count=integer())
+for (i in 0:23)
+{
+  
+  train_subset0 <- subset(traintest, time == i & dataset == "train")
+  summary(train_subset0$hour)
+  
+  
+  ###############Start wit the average of the count as a predictor
+  train_subset0$predict_avg <- mean(train_subset0$count)
+  MSE_Avg <- mean( (train_subset0$predict_avg - train_subset0$count)^2, na.rm = TRUE)
+  
+  ############ Create an easy CART tree ##########
+  fit <- rpart(count ~ 
+                 season +
+                 holiday +
+                 workingday +
+                 weather +
+                 temp +
+                 atemp +
+                 humidity +
+                 windspeed
+                ,train_subset0,method="anova",model="true")
+  printcp(fit) # display the results 
+  plotcp(fit) # visualize cross-validation results 
+  summary(fit) # detailed summary of splits
+  
+  # plot tree, extra =2 -> number of correct/number of total observations
+  prp(fit, faclen = 20, type = 3, varlen = 20)
+  
+  #calculate the mse of the training set
+  train_subset0$predict_cart <- predict(fit,train_subset0)
+  MSE_CART <- mean( (train_subset0$predict_cart - train_subset0$count)^2, na.rm = TRUE)
+  validate(fit)
+  
+  
+  ############  Random forest #####################
+  library(randomForest)
+  
+  #built a randomd Forest (for a random forest we first need to take care of missing values)
+  fit_rf <- randomForest(count ~ 
+                           season +
+                           holiday +
+                           workingday +
+                           weather +
+                           temp +
+                           atemp +
+                           humidity +
+                           windspeed, train_subset0, importance=TRUE, ntree=20, type='supervised' )
+  #plot the importance of the variables of the random forest
+  varImpPlot(fit_rf,sort=TRUE)
+  fit_rf
+  
+  #calculate the mse of the training set
+  train_subset0$predict_randomforest <- predict(fit_rf,train_subset0)
+  MSE_RF <- mean( (train_subset0$predict_randomforest - train_subset0$count)^2, na.rm = TRUE)
+  
+  
+  test_subset0 <- subset(traintest, time == i & dataset == "test")
+  test_subset0$predict_count <- predict(fit_rf, test_subset0)
+  
+  #####Add the results of this set to the total set
+  submit<-rbind(submit,data.frame(datetime = test_subset0$datetime, count = round(test_subset0$predict_count,0)))
+}
 
 ###### Submit to Kaggle #######
-
-submit <- data.frame(test_subset0$datetime, count = test_subset0$predict_count)
 write.csv(submit, file = "~/Dropbox/Machine Learning/Kaggle/Bicycle/submission.csv", row.names = FALSE)
 summary(submit)
