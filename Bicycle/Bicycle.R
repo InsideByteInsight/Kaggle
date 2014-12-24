@@ -17,6 +17,7 @@
 library(dplyr)
 library(rpart)
 library(rpart.plot)
+library(rms)
 train <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/train.csv")
 test <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/test.csv")
 test$registered <- NA
@@ -30,20 +31,27 @@ traintest <- rbind(train, test)
 #do som data transformations
 #convert some integers to categorical variables
 
-traintest$time = as.integer(gsub("0","",gsub(":","",as.character(lapply(strsplit(as.character(traintest$datetime), split=" "), "[", 2)))))
+traintest$time = as.integer(substr(as.character(traintest$datetime),12,13))
 
+                           
 traintest$season <- as.factor(traintest$season)
 traintest$holiday <- as.factor(traintest$holiday)
 traintest$workingday <- as.factor(traintest$workingday)
 traintest$weather <- as.factor(traintest$weather)
 
-#Our dependent variables are the count of bycicles during each hour.
+#Our dependent variables are the count of bicycles during each hour.
 #Therefore we split the train set in 24 subsets, each containing only data concerning that hour
 #We will loop over the hours and run any machine learning algorithm over the hours.
 
 # as an example we will start with hour 0
-train_subset0 <- subset(traintest, time == 1 & dataset == "train")
+train_subset0 <- subset(traintest, time == 0 & dataset == "train")
 summary(train_subset0$hour)
+
+
+#Start wit the average of the count as a predictor
+train_subset0$predict_avg <- mean(train_subset0$count)
+MSE_Avg <- mean( (train_subset0$predict_avg - train_subset0$count)^2, na.rm = TRUE)
+
 ############ Create an easy CART tree to start ##########
 fit <- rpart(count ~ 
                season +
@@ -54,7 +62,7 @@ fit <- rpart(count ~
                atemp +
                humidity +
                windspeed
-              ,train_subset0,method="anova")
+              ,train_subset0,method="anova",model="true")
 printcp(fit) # display the results 
 plotcp(fit) # visualize cross-validation results 
 summary(fit) # detailed summary of splits
@@ -62,8 +70,10 @@ summary(fit) # detailed summary of splits
 # plot tree, extra =2 -> number of correct/number of total observations
 prp(fit, faclen = 20, type = 3, varlen = 20)
 
-#Get the predicted counts
-train_subset0$predicted <- predict(fit, train)
+#calculate the mse of the training set
+train_subset0$predict_cart <- predict(fit,train_subset0)
+MSE_CART <- mean( (train_subset0$predict_cart - train_subset0$count)^2, na.rm = TRUE)
+validate(fit)
 
 
 ############  Random forest #####################
@@ -81,8 +91,11 @@ fit_rf <- randomForest(count ~
                          windspeed, train_subset0, importance=TRUE, ntree=20, type='supervised' )
 #plot the importance of the variables of the random forest
 varImpPlot(fit_rf,sort=TRUE)
+fit_rf
 
-#predict
+#calculate the mse of the training set
+train_subset0$predict_randomforest <- predict(fit_rf,train_subset0)
+MSE_RF <- mean( (train_subset0$predict_randomforest - train_subset0$count)^2, na.rm = TRUE)
 
 
 test_subset0 <- subset(traintest, time == 1 & dataset == "test")
