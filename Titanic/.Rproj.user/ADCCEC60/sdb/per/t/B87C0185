@@ -1,0 +1,16 @@
+{
+    "contents" : "# Classification Tree with rpart\n# library(rpart)\nlibrary(RODBC)\nlibrary(gbm)\ndbhandle <- odbcConnect('Statistics', uid='reader', pwd='b@n@@n2014')\nrisk.data <- sqlQuery(dbhandle, 'SELECT * FROM vw_STA_FullRiskManagement WHERE CountryCode = \\'ES\\' AND DatabaseId = \\'C\\' AND FutureProfitAndLoss IS NOT NULL AND InvoiceRank = 1 AND IncomeType = \\'Social Security\\' AND DateStart > \\'2013-05-31\\' AND DateStart < \\'2014-06-01\\' ')\nodbcCloseAll()\n# Add a date-of-month of DateStart column\nwholedataset = risk.data\n\nwholedataset$StartDay <- as.numeric(format(risk.data$DateStart, \"%d\"))\n\n\n# Add a column isbad that shows wether the futureprofitandloss is negative\nisbadcredit <- function(x) { if (x <= 0) 1 else 0 }\nwholedataset$isbad <- sapply(wholedataset$FutureProfitAndLoss, isbadcredit)\nsummary(wholedataset$isbad)\n\n# Add Amount to ProvableIncome variable\nwholedataset$atoi <- wholedataset$Amount / wholedataset$ProvableIncome\n\n# Split the dataset into a train and test set\nwholedataset$istrain <- (runif(nrow(risk.data), 0, 1) < 0.6666)\n\ntrain <- subset(wholedataset, istrain==TRUE)\ntest <- subset(wholedataset, istrain==FALSE)\n\n# grow tree\nlossMatrix = matrix(c(0,328,164,0),nrow=2,ncol=2,byrow=TRUE)\nfit <- gbm(isbad ~ ProvableIncome + StartDay + atoi + IncomeDay + Gender + Age + MaritalStatus, data=train,n.trees=200, shrinkage=0.08, train.fraction=0.5)\nfit\n\n# determine iteration count using random test subset\nbest.iter <- gbm.perf(fit,method=\"test\")\nbest.iter\n\n\nsummary(fit) # detailed summary of splits\n\n# plot tree\npdf(file=\"test.pdf\",width=10,height=10)\n\n#set the margin sizes in inches\npar(mai=c(1,1,1,1))\n#set the plot width and height in inches\npar(pin=c(6,6))\nplot.new()\nplot(fit, uniform =TRUE)\ntext(fit, use.n =TRUE, all=TRUE, cex=0.8)\n\ndev.off()\n#####################################\n# MODEL EVALUATION\n\ncutoff <- 0.50\n\n#predict\nprob <- predict(fit, test, best.iter, type=\"response\")\ntest$prob <- prob\n#apply the good bad average profit and loss times the pd's\n# ismodelpred <- function(x){if((1-x) * 1 - x * 1 >0) 1 else 0}\n# test$modelpred <- sapply(test$prob, ismodelpred)\n# test$model1_pnl = test$modelpred * test$ProfitAndLoss\n# model1_pnl = sum(test$model1_pnl)\n\n#do the same based on a cutoff percentage (yields the same outcome)\ntest$pred <- (test$prob > cutoff)\n# calculate hypothetical profitandloss column on the test set, would the model have been used \nhyppnl <- function(x) { if (!(x[1])) x[2] else 0 }\ntest$model2_pnl <- apply(test[,c(\"pred\",\"ProfitAndLoss\")], 1, hyppnl)\nmodel2_pnl = sum(test$model2_pnl)\n# predmatrix <- table(test[,c(\"isbad\",\"pred\")])\n# predmatrix\n# prop.table(predmatrix)\n# plot(prop.table(predmatrix))\npnl <- sum(test$ProfitAndLoss)\npnl\nmodel1_pnl\nmodel2_pnl\n# \n# # show result matrix\n\n# predmatrix\n# prop.table(predmatrix)\n\n\n",
+    "created" : 1412517806380.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1383945772",
+    "id" : "B87C0185",
+    "lastKnownWriteTime" : 1410468059,
+    "path" : "~/Dropbox/Novum/13. R/Spain Virgins/GBM.R",
+    "project_path" : null,
+    "properties" : {
+    },
+    "source_on_save" : false,
+    "type" : "r_source"
+}
