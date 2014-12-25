@@ -27,13 +27,17 @@ train$dataset <- as.factor("train")
 test$dataset <- as.factor("test")
 
 traintest <- rbind(train, test)
-########## DATA Modification ########
-#do som data transformations
+########## 
+#DATA Modification
+#do some data transformations
 #convert some integers to categorical variables
+#################
 
-traintest$time = as.integer(substr(as.character(traintest$datetime),12,13))
-
-                           
+# pull the weekday and hour from the datetime variable with R's strptime() function
+traintest$datetime <- strptime(traintest$datetime, format="%Y-%m-%d %H:%M:%S")
+traintest$weekday <- weekdays(traintest$datetime)
+traintest$hour <- traintest$datetime$hour
+        
 traintest$season <- as.factor(traintest$season)
 traintest$holiday <- as.factor(traintest$holiday)
 traintest$workingday <- as.factor(traintest$workingday)
@@ -41,21 +45,27 @@ traintest$weather <- as.factor(traintest$weather)
 
 #Our dependent variables are the count of bicycles during each hour.
 #Therefore we split the train set in 24 subsets, each containing only data concerning that hour
-#We will loop over the hours and run any machine learning algorithm over the hours.
+#We will loop over the hours and run any machine learning algorithm over the hours to train the differnt models
+#After that we use the best model (in the end the best model for every hour) to predict the test set.
 
 submit<-data.frame(datetime=character(), count=integer())
 for (i in 0:23)
 {
   
-  train_subset0 <- subset(traintest, time == i & dataset == "train")
+  train_subset0 <- subset(traintest, hour == i & dataset == "train")
   summary(train_subset0$hour)
   
   
-  ###############Start wit the average of the count as a predictor
+  ###############
+  #Start with the average of the count as a predictor
+  ################
+  
   train_subset0$predict_avg <- mean(train_subset0$count)
   MSE_Avg <- mean( (train_subset0$predict_avg - train_subset0$count)^2, na.rm = TRUE)
   
-  ############ Create an easy CART tree ##########
+  ############ 
+  #Create an easy CART tree 
+  ##########
   fit <- rpart(count ~ 
                  season +
                  holiday +
@@ -79,7 +89,10 @@ for (i in 0:23)
   validate(fit)
   
   
-  ############  Random forest #####################
+  ############  
+  #Random forest 
+  #####################
+  
   library(randomForest)
   
   #built a randomd Forest (for a random forest we first need to take care of missing values)
@@ -100,11 +113,16 @@ for (i in 0:23)
   train_subset0$predict_randomforest <- predict(fit_rf,train_subset0)
   MSE_RF <- mean( (train_subset0$predict_randomforest - train_subset0$count)^2, na.rm = TRUE)
   
+  ####################
+  #predict the outcomes of the test set - for now we use the random forest as the leading model
+  #####################
   
-  test_subset0 <- subset(traintest, time == i & dataset == "test")
+  test_subset0 <- subset(traintest, hour == i & dataset == "test")
   test_subset0$predict_count <- predict(fit_rf, test_subset0)
   
-  #####Add the results of this set to the total set
+  #############################################
+  #Add the results of this set to the total set
+  ############################################
   submit<-rbind(submit,data.frame(datetime = test_subset0$datetime, count = round(test_subset0$predict_count,0)))
 }
 
