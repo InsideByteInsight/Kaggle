@@ -35,10 +35,10 @@ traintest <- rbind(train, test)
 #convert some integers to categorical variables
 
 #pull the weekday and hour from the datetime variable with R's strptime() function
-traintest$datetime <- strptime(traintest$datetime, format="%Y-%m-%d %H:%M:%S")
+#traintest$datetime <- strptime(traintest$datetime, format="%Y-%m-%d %H:%M:%S")
 #traintest$hour <- traintest$datetime$hour
 traintest$hour <- as.factor(substr(traintest$datetime, 12,13))
-traintest$weekday <- as.factor(weekdays(traintest$datetime))
+traintest$weekday <- as.factor(weekdays(strptime(traintest$datetime, format="%Y-%m-%d %H:%M:%S")))
 traintest$year <- as.factor(substr(traintest$datetime, 1,4))
 traintest$month <- as.factor(substr(traintest$datetime, 6,7))
 traintest$day <- as.factor(substr(traintest$datetime, 9,10))
@@ -141,6 +141,18 @@ train$predict.rf <- predict(fit.rf,train)
 RMSLE_RF <- rmsle(train$count, abs(train$predict.rf))
 
 #--END - RANDOM FOREST--
+
+##START - GBM##
+library("gbm")
+
+fit.gbm<-gbm(formula, data = train, n.trees = 1000,shrinkage=0.02)
+
+best.iter <- gbm.perf(fit.gbm,)
+best.iter
+
+
+train$predict.gbm <- predict(fit.gbm, train,best.iter)
+RMSLE_GBM <- rmsle(train$count, abs(train$predict.gbm))
 #-END - MODELS-
 
 
@@ -154,8 +166,8 @@ test$predict.rf <- predict(fit.rf, test)
 #START - SUBMIT RESULTS#
 #write an output csv to submit to kaggle
 
-submit<-data.frame(datetime = test$datetime, count = round(test$predict.rf,0))
+submit<-data.frame(datetime = test$datetime, count = test$predict.rf)
 write.csv(submit, file = "~/Dropbox/Machine Learning/Kaggle/Bicycle/submission.csv", row.names = FALSE)
-
+summary(submit)
 #-END - SUBMIT RESULTS-
 
