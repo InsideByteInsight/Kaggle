@@ -14,6 +14,12 @@
 # registered - number of registered user rentals initiated
 # count - number of total rentals
 
+
+#todo
+#1. feature engineering
+#2. hyperparameter tuning (search over best settings of the models)
+#3. different models (svm, nn, etc.)
+
 library(dplyr)
 library(rpart)
 library(rpart.plot)
@@ -61,16 +67,14 @@ test <- subset(traintest,dataset == "test")
 day_hour_counts <- as.data.frame(aggregate(train[,"count"], list(weekday=train$weekday, hour=train$hour), mean))
 day_hour_counts$weekday <- factor(day_hour_counts$weekday, ordered=TRUE, levels=c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 day_hour_counts$hour <- as.numeric(as.character(day_hour_counts$hour))
-
+day_month_counts <- as.data.frame(aggregate(train[,"count"], list(day=train$day, month=train$month), mean))
+day_season_counts <- as.data.frame(aggregate(train[,"count"], list(day=train$day, season=train$season), mean))
 
 # plot heat mat with ggplot
 library(ggplot2)
 require(stats)
-ggplot(day_hour_counts, aes(x = hour, y = weekday)) + geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
-
-
-day_month_counts <- as.data.frame(aggregate(train[,"count"], list(day=train$day, month=train$month), mean))
-ggplot(day_month_counts, aes(x = day, y = month)) + geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
+ggplot(day_hour_counts, aes(x = hour, y = weekday))+ geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
+ggplot(day_season_counts, aes(x = day, y = season)) + geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
 
 
 #/START - MODELS/
@@ -112,16 +116,16 @@ RMSLE_RPART <- rmsle(train$count, abs(train$predict.rpart))
 #--END - RPART
 
 ##START - CART CTREE##
-# library(party)
-# library(partykit)
-# 
-# fit.ctree <- ctree(formula,train)
-# plot(fit.ctree)
-# fit.ctree
-# 
-# #calculate the mse of the training set
-# train$predict.ctree <- predict(fit.ctree,train)
-# RMSLE_CTREE <- rmsle(train$count, abs(train$predict.ctree))
+library(party)
+library(partykit)
+
+fit.ctree <- ctree(formula,train)
+plot(fit.ctree)
+fit.ctree
+
+#calculate the mse of the training set
+train$predict.ctree <- predict(fit.ctree,train)
+RMSLE_CTREE <- rmsle(train$count, abs(train$predict.ctree))
 
 #validate(fit)
 
