@@ -20,7 +20,7 @@ library(rpart.plot)
 library(rms)
 library(Metrics)
 
-set.seed(1234)
+#set.seed(1234)
 train <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/train.csv")
 test <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/test.csv")
 test$registered <- NA
@@ -40,15 +40,16 @@ traintest <- rbind(train, test)
 #################
 
 # pull the weekday and hour from the datetime variable with R's strptime() function
-traintest$datetime <- strptime(traintest$datetime, format="%Y-%m-%d %H:%M:%S")
-traintest$weekday <- weekdays(traintest$datetime)
-traintest$hour <- traintest$datetime$hour
-        
+traintest$datetime2 <- strptime(traintest$datetime, format="%Y-%m-%d %H:%M:%S")
+traintest$weekday <- as.factor(traintest$datetime2$wday)
+traintest$hour <- traintest$datetime2$hour
+traintest$month <- as.factor(traintest$datetime2$mon)
+traintest$year <- as.factor(traintest$datetime2$year+1900)
 traintest$season <- as.factor(traintest$season)
 traintest$holiday <- as.factor(traintest$holiday)
 traintest$workingday <- as.factor(traintest$workingday)
 traintest$weather <- as.factor(traintest$weather)
-traintest$isWeekend <- sapply(traintest$weekday, function(x){if(x == "Saturday" | x == "Sunday") 1 else 0})
+traintest$isWeekend <- sapply(traintest$weekday, function(x){if(x == 6 | x == 7) 1 else 0})
 
 #Our dependent variables are the count of bicycles during each hour.
 #Therefore we split the train set in 24 subsets, each containing only data concerning that hour
@@ -75,6 +76,8 @@ for(dependent in dependents)
                              atemp +
                              humidity +
                              windspeed +
+                              month +
+                              year +
                               isWeekend"))
   
   for (i in 0:23)
@@ -144,7 +147,7 @@ for(dependent in dependents)
     #Add the results of this set to the total set
     ############################################
     originalset <-rbind(originalset,train.testset)
-    submit<-rbind(submit,data.frame(datetime = test.subset$datetime, count = round(test.subset[[pred]],0)))
+    submit<-rbind(submit,data.frame(datetime = test.subset$datetime, count = test.subset[[pred]]))
   }
 }
 rmsle(originalset[[dependent]], originalset[[pred]])
