@@ -19,6 +19,7 @@
 #1. feature engineering
 #2. hyperparameter tuning (search over best settings of the models)
 #3. different models (svm, nn, etc.)
+set.seed(1234)
 
 library(dplyr)
 library(rpart)
@@ -47,13 +48,14 @@ traintest$hour <- as.factor(substr(traintest$datetime, 12,13))
 traintest$weekday <- as.factor(weekdays(strptime(traintest$datetime, format="%Y-%m-%d %H:%M:%S")))
 traintest$year <- as.factor(substr(traintest$datetime, 1,4))
 traintest$month <- as.factor(substr(traintest$datetime, 6,7))
-traintest$day <- as.factor(substr(traintest$datetime, 9,10))
+traintest$day <- as.integer(substr(traintest$datetime, 9,10))
 traintest$date <- as.Date(substr(traintest$datetime, 1,10))
         
 traintest$season <- as.factor(traintest$season)
 traintest$holiday <- as.factor(traintest$holiday)
 traintest$workingday <- as.factor(traintest$workingday)
 traintest$weather <- as.factor(traintest$weather)
+traintest$isWeekend <- sapply(traintest$weekday, function(x){if(x == "Saturday" | x == "Sunday") 1 else 0})
 
 #split the sets again in train and test
 train <- subset(traintest, dataset == "train")
@@ -79,8 +81,19 @@ ggplot(day_season_counts, aes(x = day, y = season)) + geom_tile(aes(fill = x)) +
 
 #/START - MODELS/
 #define the formula for the fit
-formula <-count ~ 
-  season +
+
+#hold out a test set from the train set to test our model without continuousl sending to Kaggle.
+train$istrain = runif(nrow(train), 0, 1) < 0.6666
+train.trainset <- subset(train, istrain==TRUE)
+train.testset <- subset(train, istrain==FALSE)
+
+for (i in 1:2)
+{
+#Predict one time the casual and one time the registered users and then add the two.
+  whichcount = (if (i==1) "registered" else "casual")
+  prediction <- paste("predict.",whichcount, sep="")
+
+  formula <- as.formula(paste(whichcount, "~ season +
   holiday +
   workingday +
   weather +
@@ -89,19 +102,23 @@ formula <-count ~
   humidity +
   windspeed +
   hour +
-  weekday
+  weekday +
+  isWeekend"))
+
+
 
 #//START - AVERAGE AS THE PREDICTOR//
-  
-train$predict.avg <- mean(train$count)
-
-RMSLE_AVG <- rmsle(train$count, abs(train$predict.avg))
+pred <- paste(prediction,".avg",sep="")
+train.trainset[[pred]] <- mean(train.trainset$count)
+train.testset[[pred]] <- mean(train.trainset$count)
+RMSLE_AVG_Train <- rmsle(train.trainset$count, abs(train.trainset[[pred]]))
+RMSLE_AVG <- rmsle(train.testset$count, abs(train.testset[[pred]]))
 #--END AVERAGE AS THE PREDICTOR--
 
 #/START - CART TREE
 library(rpart)
 
-fit.rpart <- rpart(formula,train)
+fit.rpart <- rpart(formula,train.trainset)
 printcp(fit.rpart) # display the results 
 plotcp(fit.rpart) # visualize cross-validation results 
 summary(fit.rpart) # detailed summary of splits
@@ -109,23 +126,26 @@ summary(fit.rpart) # detailed summary of splits
 # plot tree, extra =2 -> number of correct/number of total observations
 prp(fit.rpart, faclen = 20, type = 3, varlen = 20)
 
-#calculate the mse of the training set
-train$predict.rpart <- predict(fit.rpart,train)
-RMSLE_RPART <- rmsle(train$count, abs(train$predict.rpart))
+#calculate the rmmsle on the train.testset set
+pred <- paste(prediction,".rpart",sep="")
+train.trainset[[pred]] <- predict(fit.rpart,train.trainset)
+train.testset[[pred]] <- predict(fit.rpart,train.testset)
 
+RMSLE_RPART_Train <- rmsle(train.trainset[[whichcount]], abs(train.trainset[[pred]]))
+RMSLE_RPART <- rmsle(train.testset[[whichcount]], abs(train.testset[[pred]]))
 #--END - RPART
 
 ##START - CART CTREE##
-library(party)
-library(partykit)
-
-fit.ctree <- ctree(formula,train)
-plot(fit.ctree)
-fit.ctree
-
-#calculate the mse of the training set
-train$predict.ctree <- predict(fit.ctree,train)
-RMSLE_CTREE <- rmsle(train$count, abs(train$predict.ctree))
+# library(party)
+# library(partykit)
+# 
+# fit.ctree <- ctree(formula,train.trainset)
+# plot(fit.ctree)
+# fit.ctree
+# 
+# #calculate the mse of the train.trainseting set
+# train.trainset$predict.ctree <- predict(fit.ctree,train.trainset)
+# RMSLE_CTREE <- rmsle(train.trainset$count, abs(train.trainset$predict.ctree))
 
 #validate(fit)
 
@@ -136,36 +156,51 @@ RMSLE_CTREE <- rmsle(train$count, abs(train$predict.ctree))
 library(randomForest)
 
 #built a randomd Forest (for a random forest we first need to take care of missing values)
-fit.rf <- randomForest(formula, train, importance=TRUE, ntree=20, type='supervised' )
+fit.rf <- randomForest(formula, train.trainset, importance=TRUE, ntree=20, type='supervised' )
 #plot the importance of the variables of the random forest
 varImpPlot(fit.rf,sort=TRUE)
 
-#calculate the mse of the training set
-train$predict.rf <- predict(fit.rf,train)
-RMSLE_RF <- rmsle(train$count, abs(train$predict.rf))
+#calculate the mse of the train.trainseting set
+pred <- paste(prediction,".rf",sep="")
+train.trainset[[pred]] <- predict(fit.rf,train.trainset)
+train.testset[[pred]] <- predict(fit.rf,train.testset)
+
+RMSLE_RF_Train <- rmsle(train.trainset[[whichcount]], abs(train.trainset[[pred]]))
+RMSLE_RF <- rmsle(train.testset[[whichcount]], abs(train.testset[[pred]]))
 
 #--END - RANDOM FOREST--
 
 ##START - GBM##
 library("gbm")
 
-fit.gbm<-gbm(formula, data = train, n.trees = 1000,shrinkage=0.02)
 
-best.iter <- gbm.perf(fit.gbm,)
+fit.gbm<-gbm(formula, data = train.trainset, n.trees = 2000,shrinkage=0.02,train.fraction = 0.8)
+
+best.iter <- gbm.perf(fit.gbm,method="test")
 best.iter
 
+pred <- paste(prediction,".gbm",sep="")
+train.trainset[[pred]] <- predict(fit.gbm, train.trainset,best.iter)
+train.testset[[pred]] <- predict(fit.gbm, train.testset,best.iter)
 
-train$predict.gbm <- predict(fit.gbm, train,best.iter)
-RMSLE_GBM <- rmsle(train$count, abs(train$predict.gbm))
+
+RMSLE_GBM_Train <- rmsle(train.trainset[[whichcount]], abs(train.trainset[[pred]]))
+RMSLE_GBM <- rmsle(train.testset[[whichcount]], abs(train.testset[[pred]]))
+
 #-END - MODELS-
 
 
 #START - PREDICT#
 #for now we use the random forest to predict
-  
-test$predict.rf <- predict(fit.rf, test)
-
+prediction <- paste("predict.",whichcount,".rf", sep="")
+test[[prediction]] <- predict(fit.rf, test)
 #-END - PREDICT-
+}
+train.testset$predict.rf <- train.testset$predict.casual.rf + train.testset$predict.registered.rf
+RMSLE_RF_Total <- rmsle(train.testset$count,abs(train.testset$predict.rf))
+
+
+test$predict.rf <- test$predict.casual.rf + test$predict.registered.rf
 
 #START - SUBMIT RESULTS#
 #write an output csv to submit to kaggle
