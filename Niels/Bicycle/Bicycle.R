@@ -20,7 +20,7 @@ library(rpart.plot)
 library(rms)
 library(Metrics)
 
-#set.seed(1234)
+set.seed(1234)
 train <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/train.csv")
 test <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/test.csv")
 test$registered <- NA
@@ -49,108 +49,115 @@ traintest$season <- as.factor(traintest$season)
 traintest$holiday <- as.factor(traintest$holiday)
 traintest$workingday <- as.factor(traintest$workingday)
 traintest$weather <- as.factor(traintest$weather)
-traintest$isWeekend <- sapply(traintest$weekday, function(x){if(x == 6 | x == 7) 1 else 0})
+traintest$isWeekend <- sapply(traintest$weekday, function(x){if(x == 0 | x == 6) 1 else 0})
 
+train <- subset(traintest, dataset == "train")
+test <- subset(traintest,dataset == "test")
+
+#Some plotting to get a sense for the data 
+# Save average counts for each day/time in data frame
+day_hour_counts <- as.data.frame(aggregate(train[,"count"], list(weekday=train$weekday, hour=train$hour), mean))
+day_hour_counts$weekday <- factor(day_hour_counts$weekday, ordered=TRUE, levels=c(1, 2, 3, 4, 5, 6, 0))
+day_hour_counts$hour <- as.numeric(as.character(day_hour_counts$hour))
+
+# plot heat mat with ggplot
+library(ggplot2)
+require(stats)
+ggplot(day_hour_counts, aes(x = hour, y = weekday))+ geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
+
+plot()
 #Our dependent variables are the count of bicycles during each hour.
 #Therefore we split the train set in 24 subsets, each containing only data concerning that hour
 #We will loop over the hours and run any machine learning algorithm over the hours to train the differnt models
 #After that we use the best model (in the end the best model for every hour) to predict the test set.
 
-submit<-data.frame(datetime=character(), count=integer())
-originalset <- data.frame(traintest[0,])
+#set model and some other parameters
+model = "RF"
+submit = TRUE
+submission<-data.frame(datetime=character(), count=integer())
+train.rs <- data.frame(traintest[0,])
+test.rs <- data.frame(traintest[0,])
+dependents <- c("count","registered","casual")
 
-#define the formula here
-dependents <- c("registered","casual")
-dependents <- c("count")
-
-for(dependent in dependents)
+for (h in 0:23)
 {
-  pred <- paste("predict.",dependent, sep="")
-  originalset[[pred]]=numeric()
-  formula <- as.formula(paste(dependent, " ~ 
-                             season +
-                             holiday +
-                             workingday +
-                             weather +
-                             temp +
-                             atemp +
-                             humidity +
-                             windspeed +
-                              month +
-                              year +
-                              isWeekend"))
   
-  for (i in 0:23)
+  train.ts <- subset(traintest, hour == h & dataset == "train" & istrain == TRUE)
+  train.vs <- subset(traintest, hour == h & dataset == "train" & istrain == FALSE)
+  test.ss <- subset(traintest, hour == h & dataset == "test")
+  
+  for(dependent in dependents)
   {
+    pred <- paste("pred.",dependent, sep="")
+  
+    formula <- as.formula(paste(dependent, " ~ 
+                               season +
+                               holiday +
+                               workingday +
+                               weather +
+                               temp +
+                               atemp +
+                               humidity +
+                               windspeed +
+                                month +
+                                year +
+                                isWeekend"))
+
+    if (model == "RPart"){
+       
+      ############ 
+      #Create an easy CART tree 
+      ##########
+      fit <- rpart(formula,train.ts,method="anova",model="true")
+      printcp(fit) # display the results 
+      plotcp(fit) # visualize cross-validation results 
+      summary(fit) # detailed summary of splits
+      
+      # plot tree, extra =2 -> number of correct/number of total observations
+      prp(fit, faclen = 20, type = 3, varlen = 20)
+
+      
+    }
+    else if (model == "RF"){
+    #   ############  
+    #   #Random forest 
+    #   #####################
+      
+      library(randomForest)
+      
+      #built a randomd Forest (for a random forest we first need to take care of missing values)
+      fit <- randomForest(formula, train.ts, importance=TRUE, ntree=200, type='supervised' )
+      #plot the importance of the variables of the random forest
+      #varImpPlot(fit.rf,sort=TRUE)
+      #fit.rf
+
+    }
+        
+    #predit on the train.vs
+    train.vs[[pred]] <- predict(fit,train.vs)
+    #predict ont he test.testset
+    test.ss[[pred]] <- predict(fit, test.ss)
+    RMSLE[h] <- rmsle(train.vs[[pred]],train.vs[[dependent]])
     
-    train.trainset <- subset(traintest, hour == i & dataset == "train" & istrain == TRUE)
-    train.testset <- subset(traintest, hour == i & dataset == "train" & istrain == FALSE)
-   
-    
-  #   ###############
-  #   #Start with the average of the count as a predictor
-  #   ################
-  #   
-  #   train.trainset$predict_avg <- mean(train.trainset$count)
-  #   MSE_Avg <- mean( (train.trainset$predict_avg - train.trainset$count)^2, na.rm = TRUE)
-  #   
-  #   ############ 
-  #   #Create an easy CART tree 
-  #   ##########
-  #   fit <- rpart(count ~ 
-  #                  season +
-  #                  holiday +
-  #                  workingday +
-  #                  weather +
-  #                  temp +
-  #                  atemp +
-  #                  humidity +
-  #                  windspeed
-  #                 ,train.trainset,method="anova",model="true")
-  #   printcp(fit) # display the results 
-  #   plotcp(fit) # visualize cross-validation results 
-  #   summary(fit) # detailed summary of splits
-  #   
-  #   # plot tree, extra =2 -> number of correct/number of total observations
-  #   prp(fit, faclen = 20, type = 3, varlen = 20)
-  #   
-  #   #calculate the mse of the training set
-  #   train.trainset$predict_cart <- predict(fit,train.trainset)
-  #   MSE_CART <- mean( (train.trainset$predict_cart - train.trainset$count)^2, na.rm = TRUE)
-  #   validate(fit)
-  #   
-  #   
-  #   ############  
-  #   #Random forest 
-  #   #####################
-    
-    library(randomForest)
-    
-    #built a randomd Forest (for a random forest we first need to take care of missing values)
-    fit.rf <- randomForest(formula, train.trainset, importance=TRUE, ntree=200, type='supervised' )
-    #plot the importance of the variables of the random forest
-    #varImpPlot(fit.rf,sort=TRUE)
-    #fit.rf
-    
-    #calculate the mse of the train.testset
-    train.testset[[pred]] <- predict(fit.rf,train.testset)
-    MSE_RF <- rmsle(train.testset[[pred]],train.testset[[dependent]])
-    
-    ####################
-    #predict the outcomes of the test set - for now we use the random forest as the leading model
-    #####################
-    
-    test.subset <- subset(traintest, hour == i & dataset == "test")
-    test.subset[[pred]] <- predict(fit.rf, test.subset)
-    
-    #############################################
-    #Add the results of this set to the total set
-    ############################################
-    originalset <-rbind(originalset,train.testset)
-    submit<-rbind(submit,data.frame(datetime = test.subset$datetime, count = test.subset[[pred]]))
-  }
+  } 
+  ##############################################
+      #Add the results of this set to the total set
+  ############################################
+  train.rs <-rbind(train.rs,train.vs)
+  test.rs<-rbind(test.rs,test.ss)
 }
-rmsle(originalset[[dependent]], originalset[[pred]])
+
+train.rs$pred.regcasual <- train.rs$pred.registered + train.rs$pred.casual
+test.rs$pred.regcasual <- test.rs$pred.registered + test.rs$pred.casual
+
+
+RMSLE.Count<-rmsle(train.rs$count, train.rs$pred.count)
+RMSLE.Reg<-rmsle(train.rs$registered, train.rs$pred.registered)
+RMSLE.Cas<-rmsle(train.rs$casual, train.rs$pred.casual)
+RMSLE.RegCas<-rmsle(train.rs$count, train.rs$pred.regcasual)
+
 ###### Submit to Kaggle #######
-write.csv(submit, file = "~/Dropbox/Machine Learning/Kaggle/Bicycle/submission.csv", row.names = FALSE)
-summary(submit)
+if (submit ==TRUE){
+  submission<-data.frame(datetime = test.rs$datetime, count = test.rs$pred.regcasual)
+write.csv(submission, file = "~/Dropbox/Machine Learning/Kaggle/Bicycle/submission.csv", row.names = FALSE)
+}
