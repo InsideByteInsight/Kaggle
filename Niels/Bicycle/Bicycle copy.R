@@ -60,24 +60,12 @@ day_hour_counts <- as.data.frame(aggregate(train[,"count"], list(weekday=train$w
 day_hour_counts$weekday <- factor(day_hour_counts$weekday, ordered=TRUE, levels=c(1, 2, 3, 4, 5, 6, 0))
 day_hour_counts$hour <- as.numeric(as.character(day_hour_counts$hour))
 
-weather_hour_counts <- as.data.frame(aggregate(train[,"count"], list(weather=train$weather, hour=train$hour), mean))
-weather_hour_counts$weather <- factor(weather_hour_counts$weather)
-weather_hour_counts$hour <- as.numeric(as.character(weather_hour_counts$hour))
-
 # plot heat mat with ggplot
 library(ggplot2)
 require(stats)
 ggplot(day_hour_counts, aes(x = hour, y = weekday))+ geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
-ggplot(weather_hour_counts, aes(x = hour, y = weather))+ geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
 
-#summarise
-library(plyr)
-
-mm<-ddply(train,"season", summarise,meancount=mean(count))
-
-c<-ggplot(data=mm,aes(season, meancount))
-c+geom_bar(stat="identity")+coord_flip()
-
+plot()
 #Our dependent variables are the count of bicycles during each hour.
 #Therefore we split the train set in 24 subsets, each containing only data concerning that hour
 #We will loop over the hours and run any machine learning algorithm over the hours to train the differnt models
@@ -149,7 +137,7 @@ for (h in 0:23)
     train.vs[[pred]] <- predict(fit,train.vs)
     #predict ont he test.testset
     test.ss[[pred]] <- predict(fit, test.ss)
-    RMSLE <- rmsle(train.vs[[pred]],train.vs[[dependent]])
+    RMSLE[h] <- rmsle(train.vs[[pred]],train.vs[[dependent]])
     
   } 
   ##############################################
