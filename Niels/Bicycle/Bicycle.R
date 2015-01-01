@@ -14,6 +14,15 @@
 # registered - number of registered user rentals initiated
 # count - number of total rentals
 
+#TODO
+
+#More feature engineering
+#1 implement adjusted seasons (spring = march, april may!)
+#2 do not loop over all hours but over sets of hours
+#3 check for outliers in data
+
+
+library(sqldf)
 library(dplyr)
 library(rpart)
 library(rpart.plot)
@@ -76,7 +85,11 @@ library(plyr)
 mm<-ddply(train,"season", summarise,meancount=mean(count))
 
 c<-ggplot(data=mm,aes(season, meancount))
-c+geom_bar(stat="identity")+coord_flip()
+c +geom_bar(stat="identity") +   
+  #coord_flip() + 
+  theme(axis.title.y = element_blank())
+
+ddply(train,.(season, month), summarize,meancount=mean(count))
 
 #Our dependent variables are the count of bicycles during each hour.
 #Therefore we split the train set in 24 subsets, each containing only data concerning that hour
