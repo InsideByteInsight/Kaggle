@@ -17,9 +17,14 @@
 #TODO
 
 #More feature engineering
-#1 implement adjusted seasons (spring = march, april may!)
+#1 implement adjusted seasons (spring = march, april may!) DONE
 #2 do not loop over all hours but over sets of hours
 #3 check for outliers in data
+#4 Make some corrections on the humidity - e.g. a humidity of 0 or 100% is not possible! So what is "correct" data and what are errors?
+# Maybe make a model based on temperature, month  and a temp to predict humidity.
+# Windspeed has a lot of 0 values. Make a model to predict the correct winddspeed based on month, season and temp?
+# Add the weather of the previous day as a predictor. People that observe nice weather today will think about renting a bike tomorrow.
+
 
 
 library(sqldf)
@@ -52,44 +57,67 @@ traintest <- rbind(train, test)
 traintest$datetime2 <- strptime(traintest$datetime, format="%Y-%m-%d %H:%M:%S")
 traintest$weekday <- as.factor(traintest$datetime2$wday)
 traintest$hour <- traintest$datetime2$hour
-traintest$month <- as.factor(traintest$datetime2$mon)
+traintest$day <- traintest$datetime2$mday
+traintest$month <- traintest$datetime2$mon
 traintest$year <- as.factor(traintest$datetime2$year+1900)
 traintest$season <- as.factor(traintest$season)
 traintest$holiday <- as.factor(traintest$holiday)
 traintest$workingday <- as.factor(traintest$workingday)
 traintest$weather <- as.factor(traintest$weather)
 traintest$isWeekend <- sapply(traintest$weekday, function(x){if(x == 0 | x == 6) 1 else 0})
+traintest$seasonAdj <- sapply(traintest$month, function(x){
+  if(x<= 2) 1 
+  else if(x<=5) 2 
+  else if (x<=8) 3 
+  else 4
+})
+traintest$month <- as.factor(traintest$datetime2$mon)
+
+#function to goes back n rows and adds n columns to the dataframe
+prevrows <- function(data,n) {sapply(1:n,function(x) c(rep(NA,x),head(data,-x)))}
+traintest$weather.prev <- prevrows(traintest$weather,1)
+
+#map weather 4 (this is an outlier) to weather 3 (the closest)
+traintest$weather <- sapply(traintest$weather, function(x){if(x==4) 3 else x})
+
 
 train <- subset(traintest, dataset == "train")
 test <- subset(traintest,dataset == "test")
 
-#Some plotting to get a sense for the data 
-# Save average counts for each day/time in data frame
-day_hour_counts <- as.data.frame(aggregate(train[,"count"], list(weekday=train$weekday, hour=train$hour), mean))
-day_hour_counts$weekday <- factor(day_hour_counts$weekday, ordered=TRUE, levels=c(1, 2, 3, 4, 5, 6, 0))
-day_hour_counts$hour <- as.numeric(as.character(day_hour_counts$hour))
+# #########PLOTTING######################
+# #Some plotting to get a sense for the data 
+# # Save average counts for each day/time in data frame
+# day_hour_counts <- as.data.frame(aggregate(train[,"count"], list(weekday=train$weekday, hour=train$hour), mean))
+# day_hour_counts$weekday <- factor(day_hour_counts$weekday, ordered=TRUE, levels=c(1, 2, 3, 4, 5, 6, 0))
+# day_hour_counts$hour <- as.numeric(as.character(day_hour_counts$hour))
+# 
+# weather_hour_counts <- as.data.frame(aggregate(train[,"count"], list(weather=train$weather, hour=train$hour), mean))
+# weather_hour_counts$weather <- factor(weather_hour_counts$weather)
+# weather_hour_counts$hour <- as.numeric(as.character(weather_hour_counts$hour))
+# 
+# # plot heat mat with ggplot
+ library(ggplot2)
+# require(stats)
+# ggplot(day_hour_counts, aes(x = hour, y = weekday))+ geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
+# ggplot(weather_hour_counts, aes(x = hour, y = weather))+ geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
+# 
+# 
+ library(plyr)
+# 
+# mm<-ddply(train,"season", summarise,meancount=mean(count))
+# 
+# c<-ggplot(data=mm,aes(season, meancount))
+# c +geom_bar(stat="identity") +   
+#   #coord_flip() + 
+#   theme(axis.title.y = element_blank())
+# 
+# ddply(train,.(season, month), summarize,meancount=mean(count))
 
-weather_hour_counts <- as.data.frame(aggregate(train[,"count"], list(weather=train$weather, hour=train$hour), mean))
-weather_hour_counts$weather <- factor(weather_hour_counts$weather)
-weather_hour_counts$hour <- as.numeric(as.character(weather_hour_counts$hour))
+#plot some timeseries
+mm2<-ddply(subset(train,workingday==1 & month == 6 & isWeekend == 0),"day", summarise,meancount=sum(count))
+ggplot(data=mm2, aes(x=day, y=meancount))+geom_line(shape=1)+geom_smooth(method = lm)
+##################END PLOTTING ############################
 
-# plot heat mat with ggplot
-library(ggplot2)
-require(stats)
-ggplot(day_hour_counts, aes(x = hour, y = weekday))+ geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
-ggplot(weather_hour_counts, aes(x = hour, y = weather))+ geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average Counts", low="white", high="green") + theme(axis.title.y = element_blank())
-
-#summarise
-library(plyr)
-
-mm<-ddply(train,"season", summarise,meancount=mean(count))
-
-c<-ggplot(data=mm,aes(season, meancount))
-c +geom_bar(stat="identity") +   
-  #coord_flip() + 
-  theme(axis.title.y = element_blank())
-
-ddply(train,.(season, month), summarize,meancount=mean(count))
 
 #Our dependent variables are the count of bicycles during each hour.
 #Therefore we split the train set in 24 subsets, each containing only data concerning that hour
@@ -98,7 +126,7 @@ ddply(train,.(season, month), summarize,meancount=mean(count))
 
 #set model and some other parameters
 model = "RF"
-submit = TRUE
+submit = FALSE
 submission<-data.frame(datetime=character(), count=integer())
 train.rs <- data.frame(traintest[0,])
 test.rs <- data.frame(traintest[0,])
@@ -117,17 +145,19 @@ for (h in 0:23)
   
     formula <- as.formula(paste(dependent, " ~ 
                                season +
-                               holiday +
+                               
                                workingday +
                                weather +
                                temp +
                                atemp +
                                humidity +
-                               windspeed +
+                               
                                 month +
                                 year +
-                                isWeekend"))
-
+                                isWeekend +
+                                seasonAdj +
+                                weather.prev"))
+ 
     if (model == "RPart"){
        
       ############ 
@@ -151,9 +181,9 @@ for (h in 0:23)
       library(randomForest)
       
       #built a randomd Forest (for a random forest we first need to take care of missing values)
-      fit <- randomForest(formula, train.ts, importance=TRUE, ntree=200, type='supervised' )
+      fit <- randomForest(formula, train.ts, importance=TRUE, ntree=200, type='supervised',na.action =  na.omit)
       #plot the importance of the variables of the random forest
-      #varImpPlot(fit.rf,sort=TRUE)
+      varImpPlot(fit,sort=TRUE)
       #fit.rf
 
     }
