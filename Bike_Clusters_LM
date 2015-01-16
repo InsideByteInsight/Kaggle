@@ -1,0 +1,248 @@
+################DATA PREPERATION#####################
+#model prams------------------------------
+model = "Regression"
+sizeOfCluster = 400          
+splitTSVS = FALSE
+submit = TRUE
+#-----------------------------------------
+#load libraries
+library(sqldf)
+library(dplyr)
+library(plyr)
+library(rpart)
+library(rpart.plot)
+library(rms)
+library(Metrics)
+
+train_ts <- train
+test_ss <- test
+
+#create id
+id <- rownames(train_ts)
+train_ts <- cbind(id=id, train_ts)
+id <- rownames(test_ss)
+test_ss <- cbind(id=id, test_ss)
+
+#factorize training set
+train_ts$weather <- factor(train$weather)
+train_ts$holiday <- factor(train$holiday)
+train_ts$workingday <- factor(train$workingday)
+train_ts$season <- factor(train$season)
+
+#factorize test set
+test_ss$weather <- factor(test$weather)
+test_ss$holiday <- factor(test$holiday)
+test_ss$workingday <- factor(test$workingday)
+test_ss$season <- factor(test$season)
+
+#empty values for the predicted outcomes
+train_ts$pred.registered <- NA
+train_ts$pred.casual <- NA
+train_ts$pred.count <- NA
+test_ss$pred.registered <- NA
+test_ss$pred.casual <- NA
+test_ss$pred.count <- NA
+
+#create time column by stripping out timestamp
+train_ts$time <- substring(train$datetime,12,20)
+test_ss$time <- substring(test$datetime,12,20)
+
+#factorize new timestamp column
+train_ts$time <- factor(train_ts$time)
+test_ss$time <- factor(test_ss$time)
+
+#create hour variable
+train_ts$hour <- substring(train$datetime,12,13)
+test_ss$hour <- substring(test$datetime,12,13)
+
+train_ts$hour <- factor(train_ts$hour)
+test_ss$hour <- factor(test_ss$hour)
+
+#create day of week column
+train_ts$day <- weekdays(as.Date(train_ts$datetime))
+train_ts$day <- as.factor(train_ts$day)
+test_ss$day <- weekdays(as.Date(test_ss$datetime))
+test_ss$day <- as.factor(test_ss$day)
+
+#add weather 4 to weather 3 (1 occurence in train, 2 in test)
+train_ts$weather <- sapply(train_ts$weather, function(x){if(x==4) 3 else x})
+test_ss$weather <- sapply(test_ss$weather, function(x){if(x==4) 3 else x})
+
+#Split on all categorial variables. See how many rows are in each cluster.
+
+tempCasual <- sqldf(paste("select season, holiday, day, hour, count(id), sum(casual)/count(id)", 
+                          "from train_ts group by season, holiday, day, hour"))
+tempRegistered <- sqldf(paste("select season, holiday, day, hour, count(id), sum(registered)/count(id)", 
+                              "from train_ts group by season, holiday, day, hour"))
+#rename
+colnames(tempCasual)[colnames(tempCasual)=="sum(casual)/count(id)"] <- "AvCas"
+colnames(tempRegistered)[colnames(tempRegistered)=="sum(registered)/count(id)"] <- "AvReg"
+colnames(tempCasual)[colnames(tempCasual)=="count(id)"] <- "CountCas"
+colnames(tempRegistered)[colnames(tempRegistered)=="count(id)"] <- "CountReg"
+
+#order from low to high nr of bicycles rent
+tempCasual <- tempCasual[order(tempCasual$AvCas),]
+tempRegistered <- tempRegistered[order(tempRegistered$AvReg),]
+
+#assign cluster numbers to combinations of categorical variables
+tempCasual$timeClusterCas <- 0
+tempRegistered$timeClusterReg <- 0
+count = 0
+j = 0
+for (i in 1:nrow(tempCasual)){
+  tempCasual$timeClusterCas[i] <- j
+  count = count + tempCasual$CountCas[i]
+  if (count > sizeOfCluster){
+    j = j + 1
+    count = 0
+  }  
+}
+#put last cluster in second last for better sample size
+tempCasual$timeClusterCas <- sapply(tempCasual$timeClusterCas, function(x){if (x == j) j - 1 else x})
+count = 0
+j = 0
+for (i in 1:nrow(tempRegistered)){
+  tempRegistered$timeClusterReg[i] <- j
+  count = count + tempRegistered$CountReg[i]
+  if (count > sizeOfCluster){
+    j = j + 1
+    count = 0
+  }  
+}
+tempRegistered$timeClusterReg <- sapply(tempRegistered$timeClusterReg, function(x){if (x == j) j - 1 else x})
+
+#now add the cluster numbers to the train and test set
+#first adding cat variables
+train_ts$cat = paste(train_ts$season, train_ts$holiday, train_ts$day, train_ts$hour)
+test_ss$cat = paste(test_ss$season, test_ss$holiday, test_ss$day, test_ss$hour)
+tempCasual$cat = paste(tempCasual$season, tempCasual$holiday, tempCasual$day, tempCasual$hour)
+tempRegistered$cat = paste(tempRegistered$season, tempRegistered$holiday, tempRegistered$day, tempRegistered$hour)
+
+#train testset
+#use sql to join tables
+JoinRegistered <- sqldf("select train_ts.*, tempRegistered.timeClusterReg from train_ts left join tempRegistered on train_ts.cat = tempRegistered.cat")
+JoinCasual <- sqldf("select train_ts.*, tempCasual.timeClusterCas from train_ts left join tempCasual on train_ts.cat = tempCasual.cat")
+
+#add categorical cluster
+train_ts$catClusterReg <- JoinRegistered$timeClusterReg
+train_ts$catClusterCas <- JoinCasual$timeClusterCas
+
+#same for test
+JoinRegistered <- sqldf("select test_ss.*, tempRegistered.timeClusterReg from test_ss left join tempRegistered on test_ss.cat = tempRegistered.cat")
+JoinCasual <- sqldf("select test_ss.*, tempCasual.timeClusterCas from test_ss left join tempCasual on test_ss.cat = tempCasual.cat")
+
+test_ss$catClusterReg <- JoinRegistered$timeClusterReg
+test_ss$catClusterCas <- JoinCasual$timeClusterCas
+
+#We could't find a suitable cluster for all records in test (few NA's). Handle NA's here by joining only the fields day and hour:
+test_ss$NAcat <- paste(test_ss$day, test_ss$hour)
+tempCasual$NAcat = paste(tempCasual$day, tempCasual$hour)
+tempRegistered$NAcat = paste(tempRegistered$day, tempRegistered$hour)
+
+#change SQL statement to max if it turns out that we are underestimating the counts
+JoinRegistered <- sqldf("select test_ss.*, min(tempRegistered.timeClusterReg) from test_ss left join tempRegistered on test_ss.NAcat = tempRegistered.NAcat group by test_ss.id")
+JoinCasual <- sqldf("select test_ss.*, min(tempCasual.timeClusterCas) from test_ss left join tempCasual on test_ss.NAcat = tempCasual.NAcat group by test_ss.id")
+colnames(JoinRegistered)[colnames(JoinRegistered)=="min(tempRegistered.timeClusterReg)"] <- "NACatClusterReg"
+colnames(JoinCasual)[colnames(JoinCasual)=="min(tempCasual.timeClusterCas)"] <- "NACatClusterCas"
+test_ss$catClusterReg <- mapply(function(x,y,z){if(is.na(x)) y else z}, test_ss$catClusterReg, JoinRegistered$NACatClusterReg, test_ss$catClusterReg)
+test_ss$catClusterCas <- mapply(function(x,y,z){if(is.na(x)) y else z}, test_ss$catClusterCas, JoinCasual$NACatClusterCas, test_ss$catClusterCas)
+
+#remove help tables
+rm(JoinRegistered)
+rm(JoinCasual)
+
+#create test and validation set from train_ts
+if(splitTSVS) train_ts$istrain <- runif(nrow(train), 0, 1) < 0.6666 else train_ts$istrain <- TRUE
+temptrain <- train_ts
+train_ts <- subset(temptrain, istrain == TRUE)
+train_vs <- subset(temptrain, istrain == FALSE)
+rm(temptrain)
+
+#create result tables
+TrainReg_rs <- data.frame(train_vs[0,])
+TrainCas_rs <- data.frame(train_vs[0,])
+TestReg_rs <- data.frame(test_ss[0,])
+TestCas_rs <- data.frame(test_ss[0,])
+#######END DATA PREPERATION#############################
+
+#now our data is ready for some models
+#begin with ordinairy regression on each of the 27 clusters
+dependents <- c("registered","casual")
+
+if (model == "Regression"){
+  numberOfClusters <- max(tempRegistered$timeClusterReg)
+  
+  for(dependent in dependents)
+  {
+    for (j in 1:3) #weather types
+    { 
+      for (i in 0:numberOfClusters) #note that the clusters are not the same for Casual and Registered. Therefore innerloop.
+      { 
+        if (dependent == "registered") {
+          train_ts_cluster <- subset(train_ts, catClusterReg == i & weather == j)
+          train_vs_cluster <- subset(train_vs, catClusterReg == i & weather == j)
+          test_ss_cluster <- subset(test_ss, catClusterReg == i & weather == j)
+        } else{
+          train_ts_cluster <- subset(train_ts, catClusterCas == i & weather == j)
+          train_vs_cluster <- subset(train_vs, catClusterCas == i & weather == j)
+          test_ss_cluster <- subset(test_ss, catClusterCas == i & weather == j)  
+        }
+          
+        pred <- paste("pred.",dependent, sep="")
+        
+        formula <- as.formula(paste(dependent, " ~ 
+                                   temp +
+                                   atemp +
+                                   humidity +
+                                   windspeed"))
+        
+        fit <- lm(formula, train_ts_cluster)
+          
+        #predit on the train.vs
+        train_vs_cluster[[pred]] <- predict(fit,train_vs_cluster)
+        #predict ont he test.testset
+        test_ss_cluster[[pred]] <- predict(fit, test_ss_cluster)
+        
+        #Add results
+        if (dependent == "registered") {
+          TrainReg_rs <- rbind(TrainReg_rs,train_vs_cluster)
+          TestReg_rs <- rbind(TestReg_rs,test_ss_cluster)
+        }else{
+          TrainCas_rs <- rbind(TrainCas_rs,train_vs_cluster)
+          TestCas_rs <- rbind(TestCas_rs,test_ss_cluster)
+        }  
+      }
+    }
+  }
+  #now merge the cas and reg results.Use merge instead of SQL join just to practice
+  train_rs <- merge(TrainReg_rs, TrainCas_rs, by.x = "id", by.y = "id")
+  train_rs$pred.casual.x <- train_rs$pred.casual.y
+  train_rs <- train_rs[, -grep("y$", colnames(train_rs))]
+  colnames(train_rs) <- sub("*.x","",colnames(train_rs)) 
+  
+  #same for test_rs
+  test_rs <- merge(TestReg_rs, TestCas_rs, by.x = "id", by.y = "id")
+  test_rs$pred.casual.x <- test_rs$pred.casual.y
+  test_rs <- test_rs[, -grep("y$", colnames(test_rs))]
+  colnames(test_rs) <- sub("*.x","",colnames(test_rs)) 
+
+}
+train_rs$pred.count <- train_rs$pred.registered + train_rs$pred.casual
+test_rs$pred.count <- test_rs$pred.registered + test_rs$pred.casual
+
+#replace negatives by 0
+train_rs$pred.count <- sapply(train_rs$pred.count, function(x){if (x < 0) 0 else x})
+test_rs$pred.count <- sapply(test_rs$pred.count, function(x){if (x < 0) 0 else x})
+train_rs$pred.registered <- sapply(train_rs$pred.registered, function(x){if (x < 0) 0 else x})
+test_rs$pred.registered <- sapply(test_rs$pred.registered, function(x){if (x < 0) 0 else x})
+train_rs$pred.casual <- sapply(train_rs$pred.casual, function(x){if (x < 0) 0 else x})
+test_rs$pred.casual <- sapply(test_rs$pred.casual, function(x){if (x < 0) 0 else x})
+
+RMSLE.Count.VS <- rmsle(train_rs$count, train_rs$pred.count)
+RMSLE.Reg.VS <- rmsle(train_rs$registered, train_rs$pred.registered)
+RMSLE.Cas.VS <- rmsle(train_rs$casual, train_rs$pred.casual)
+
+if (submit ==TRUE){
+  submission<-data.frame(datetime = test_rs$datetime, count = test_rs$pred.count)
+  write.csv(submission, file = "~/RProjects/Bicecles/submission.csv", row.names = FALSE)
+}
