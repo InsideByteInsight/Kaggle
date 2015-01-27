@@ -1,0 +1,68 @@
+splitTSVS = FALSE
+
+library(Metrics)
+library(randomForest)
+
+ train <- read.csv("train.csv") #use nrows=1000 rows for speed during feature engineering
+ test <- read.csv("test.csv") #use nrows=1000 rows for speed during feature engineering
+# # 
+# #test if soil is unique --> then the 40 columns can be merged to 1
+# soil <- test[, grep("Soil_Type*",colnames(test))]
+# soil.sumrows <- rowSums(soil)
+# soil.sumrows <- data.frame(soil.sumrows)
+# subset(soil.sumrows, soil.sumrows != 1)
+# #same has been done for Wilderness
+
+#train.ts <- read.csv("train.csv", nrows=1000)
+
+featureEngineer <- function(df, training) {
+  #first merge soil
+  soilvars <- paste0('Soil_Type', 1:40)
+  areavars <- paste0('Wilderness_Area', 1:4)
+  hydrovars <- c("Horizontal_Distance_To_Hydrology", "Vertical_Distance_To_Hydrology")
+  nonattributes <- c(soilvars, areavars, hydrovars)
+  
+  # Turn soil variables into a single factor variable
+  soils <- mapply(`*`, df[,soilvars], 1:40)
+  soil <- factor(Reduce(`+`, data.frame(soils)), levels=1:40)
+  
+  # Turn wilderness area variables into a single factor variable
+  areas <- mapply(`*`, df[,areavars], 1:4)
+  area <- factor(Reduce(`+`, data.frame(areas)), levels=1:4)
+  
+  #turn distance to hydrology to a single variable
+  hydrology <- mapply(function(x, y){sqrt(x^2 + y^2)}, df$Horizontal_Distance_To_Hydrology, df$Vertical_Distance_To_Hydrology)  
+
+  #subset(d, select=-c(Id, Cover_Type, soilvars, areavars))
+  atts <- subset(df, select=setdiff(names(df), nonattributes))
+  df <- cbind(atts, soil=soil, area=area, hydrology=hydrology)
+  
+  if (training) df$Cover_Type <- factor(df$Cover_Type)
+  return(df)
+}
+
+train <- featureEngineer(train, TRUE)
+test$Cover_Type <- NA
+test <- featureEngineer(test, TRUE)
+
+if(splitTSVS) train$istrain <- runif(nrow(train), 0, 1) < 0.6666 else train$istrain <- TRUE
+train.ts <- subset(train, istrain == TRUE)
+train.vs <- subset(train, istrain == FALSE)
+
+# train$Cover_Type <- as.integer(train$Cover_Type)
+# soil_area_counts <- as.data.frame(aggregate(train[,"Cover_Type"], list(soil=train$soil, area=train$area), mean))
+# ggplot(soil_area_counts, aes(x = area, y = soil))+ geom_tile(aes(fill = x)) + scale_fill_gradient(name="Average CT", low="white", high="green") + theme(axis.title.y = element_blank())
+# train$Cover_Type <- factor(train$Cover_Type)
+
+formula <- as.formula("Cover_Type ~ Elevation + Aspect + Slope + 
+                                    Horizontal_Distance_To_Roadways +
+                                    Hillshade_9am + Hillshade_Noon + Hillshade_3pm +
+                                    Horizontal_Distance_To_Fire_Points +
+                                    hydrology + soil + area")
+
+fit <- randomForest(formula, train.ts, importance=TRUE, ntree=200, mtry=5, type='supervised',na.action =  na.omit)
+train.vs$pred.Cover_Type <- predict(fit,train.vs)
+test$Cover_Type <- predict(fit,test)
+
+#to validate
+train.vs$correct <- mapply(function(x,y){if(x == y) 1 else 0},train.vs$Cover_Type, train.vs$pred.Cover_Type)
