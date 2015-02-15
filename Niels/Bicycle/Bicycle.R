@@ -23,7 +23,7 @@
 #4 Make some corrections on the humidity - e.g. a humidity of 0 or 100% is not possible! So what is "correct" data and what are errors?
 # Maybe make a model based on temperature, month  and a temp to predict humidity.
 # Windspeed has a lot of 0 values. Make a model to predict the correct winddspeed based on month, season and temp?
-# Add the weather of the previous day as a predictor. People that observe nice weather today will think about renting a bike tomorrow.
+# Add the weather of the previous day as a predictor. People that observe nice weather today will think about renting a bike tomorrow. DONE
 
 
 

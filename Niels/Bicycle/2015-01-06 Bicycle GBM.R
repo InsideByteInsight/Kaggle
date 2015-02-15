@@ -6,22 +6,22 @@ library(rms)
 library(Metrics)
 library(randomForest)
 library(gbm)
-
+library(cubist)
 #import the data
 train <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/train.csv")
 test <- read.csv("~/Dropbox/Machine Learning/Kaggle/Bicycle/test.csv")
 
-# #combine the data
-# test$registered <- NA
-# test$casual <- NA
-# test$count <- NA
-# train$dataset <- as.factor("train")
-# test$dataset <- as.factor("test")
-# 
-# train$istrain = runif(nrow(train), 0, 1) < 0.6666
-# test$istrain <- NA
-# 
-# traintest <- rbind(train, test)
+#combine the data
+test$registered <- NA
+test$casual <- NA
+test$count <- NA
+train$dataset <- as.factor("train")
+test$dataset <- as.factor("test")
+
+train$istrain = runif(nrow(train), 0, 1) < 0.6666
+test$istrain <- NA
+
+traintest <- rbind(train, test)
 
 #data manipulations
 traintest$datetime <- strptime(traintest$datetime, format="%Y-%m-%d %H:%M:%S")
@@ -34,15 +34,15 @@ allvars <- colnames(train)
 illegalvars <- c("datetime", "count", "registered", "casual")
 predictors <- allvars[!(allvars %in% illegalvars)]
 
-set.seed(1111)
-genmod<-gbm(registered~predictors
-            ,data=train ## registered,casual,count columns
+#set.seed(1111)
+genmod<-gbm(train$registered~.
+            ,data=train[,-c(1,9,10,11,12,13,14)] ## registered,casual,count columns
             ,var.monotone=NULL
             ,distribution="gaussian"
             ,n.trees=1200
             ,shrinkage=0.1
-            ,interaction.depth=3
-            #,bag.fraction = 0.5
+            #,interaction.depth=3
+            ,bag.fraction = 0.5
             ,train.fraction = 1
             ,n.minobsinnode = 10
             ,cv.folds =10
@@ -53,4 +53,4 @@ best.iter <- gbm.perf(genmod,method="cv") ##the best iteration number
 
 train$pred = predict(genmod, train,best.iter,type="response")
 
-rmsle = rmsle(train$count, abs(train$pred))
+rmsle = rmsle(train$registered, abs(train$pred))

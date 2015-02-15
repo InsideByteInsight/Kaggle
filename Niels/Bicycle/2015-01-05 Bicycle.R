@@ -170,7 +170,7 @@ dependents <- c("registered", "casual")
 # prp(fit, faclen = 20, type = 3, varlen = 20)
 train.reg.rs <- data.frame(traintest[0,])
 test.reg.rs <- data.frame(traintest[0,])
-for (h in unique(train$hour))
+#for (h in unique(train$hour))
 {
   train.reg.ts <- subset(traintest, hour == h & dataset == "train" & istrain == TRUE)
   train.reg.vs <- subset(traintest, hour == h & dataset == "train" & istrain == FALSE)
@@ -190,13 +190,13 @@ for (h in unique(train$hour))
                               windspeed 
 
     #built a randomd Forest (for a random forest we first need to take care of missing values)
-    fit <- randomForest(formula, train.reg.ts, importance=TRUE, ntree=200, type='supervised',na.action =  na.omit)
-  fit <- gbm(formula, data = train.cas.ts, n.trees=200, shrinkage=0.08, train.fraction=0.5)  
+    #fit <- randomForest(formula, train.reg.ts, importance=TRUE, ntree=200, type='supervised',na.action =  na.omit)
+  fit <- gbm(formula, data = train.cas.ts, n.trees=1200, shrinkage=0.1, train.fraction=1)  
   #plot the importance of the variables of the random forest
     #varImpPlot(fit,sort=TRUE)
     #fit.rf
-  best.iter <- gbm.perf(fit,method="test")
-  best.iter
+  #best.iter <- gbm.perf(fit,method="test")
+  #best.iter
     #predit on the train.vs
     train.reg.vs$pred.reg <- predict(fit,train.reg.vs)
     #predict ont he test.testset
@@ -216,7 +216,7 @@ RMSLE.Reg<-rmsle(train.reg.rs$registered, abs(train.reg.rs$pred.reg))
 #######Predict the casuals
 train.cas.rs <- data.frame(traintest[0,])
 test.cas.rs <- data.frame(traintest[0,])
-for (h in unique(train$hour))
+#for (h in unique(train$hour))
 {
   train.cas.ts <- subset(traintest, hour == h & dataset == "train" & istrain == TRUE)
   train.cas.vs <- subset(traintest, hour == h & dataset == "train" & istrain == FALSE)
@@ -237,8 +237,9 @@ for (h in unique(train$hour))
   
   #built a randomd Forest (for a random forest we first need to take care of missing values)
   #fit <- randomForest(formula, train.cas.ts, importance=TRUE, ntree=200, type='supervised',na.action =  na.omit)
-  fit <- gbm(formula, data = train.cas.ts, n.trees=200, shrinkage=0.08, train.fraction=0.5)
+  fit <- gbm(formula, cv.folds = 2,data = train.cas.ts, interaction.depth = 3,n.trees=1200, shrinkage=0.1, train.fraction=0.5)
  
+  
   #plot the importance of the variables of the random forest
   #varImpPlot(fit,sort=TRUE)
   #fit.rf
